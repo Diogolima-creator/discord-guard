@@ -13,5 +13,6 @@ rm -f "$HOME/.local/share/applications/discord.desktop"
 rm -f "$HOME/.local/share/applications/discord_discord.desktop"
 rm -f "$HOME/.local/share/applications/discord-guard-widget.desktop"
 rm -f "$HOME/.config/autostart/discord-guard-widget.desktop"
+rm -f "$HOME/.local/share/icons/hicolor/scalable/apps/discord-guard.svg"
 
 echo "discord-guard removido. Segredos e estado em ~/.config/discord-guard e ~/.cache/discord-guard foram preservados."

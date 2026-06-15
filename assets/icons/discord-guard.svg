@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <defs>
+    <linearGradient id="bg" x1="16" y1="12" x2="112" y2="116" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#8ea1ff"/>
+      <stop offset="1" stop-color="#5865f2"/>
+    </linearGradient>
+    <linearGradient id="shield" x1="72" y1="52" x2="112" y2="114" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#f7fbff"/>
+      <stop offset="1" stop-color="#9ce7c2"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="8" stdDeviation="8" flood-color="#17203a" flood-opacity=".35"/>
+    </filter>
+  </defs>
+  <rect width="128" height="128" rx="30" fill="#151927"/>
+  <circle cx="57" cy="58" r="45" fill="url(#bg)" filter="url(#shadow)"/>
+  <path fill="#fff" d="M82.7 38.8c-6.1-4.6-13.1-6.8-20.4-7.1l-1 2.1c6.5.9 11.8 3.2 16.6 6.6-6.6-3.3-13.1-4.7-19.7-4.7-6.6 0-13.2 1.4-19.7 4.7 4.8-3.4 10.1-5.7 16.6-6.6l-1-2.1c-7.3.3-14.3 2.5-20.4 7.1-9.5 14-12.1 27.6-10.8 41.1 8.2 6.1 16.2 9.8 24.1 12.2l3-7.1c-4.2-1.6-8-3.7-11.4-6.4 1 .7 2.1 1.3 3.2 1.9 10.5 5.7 22.8 5.7 33.4 0 1.1-.6 2.2-1.2 3.2-1.9-3.4 2.7-7.2 4.8-11.4 6.4l3 7.1c7.9-2.4 15.9-6.1 24.1-12.2 1.6-15.7-2.8-29.2-11.4-41.1z"/>
+  <circle cx="43.8" cy="62" r="6.1" fill="#5865f2"/>
+  <circle cx="72.5" cy="62" r="6.1" fill="#5865f2"/>
+  <path d="M78 55.5c9.8 2.9 18.4 2.9 28 0 1.1 25.7-4.1 41.8-28 55.2C54.1 97.3 48.9 81.2 50 55.5c9.6 2.9 18.2 2.9 28 0z" fill="#172033" opacity=".92" filter="url(#shadow)"/>
+  <path d="M78 61.7c7.4 2.1 13.7 2.1 21.1.2.3 18.5-4 30.5-21.1 40.9-17.1-10.4-21.4-22.4-21.1-40.9 7.4 1.9 13.7 1.9 21.1-.2z" fill="url(#shield)"/>
+  <path d="M67.7 81.2l6.6 6.5 14.5-17.2" fill="none" stroke="#172033" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

@@ -5,12 +5,14 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 install -d "$HOME/.local/bin"
 install -d "$HOME/.local/share/applications"
+install -d "$HOME/.local/share/icons/hicolor/scalable/apps"
 install -d "$HOME/.config/autostart"
 install -d "$HOME/.config/systemd/user"
 
 install -m 0755 "$ROOT/bin/discord-guard" "$HOME/.local/bin/discord-guard"
 install -m 0755 "$ROOT/bin/discord" "$HOME/.local/bin/discord"
 install -m 0755 "$ROOT/bin/discord-guard-widget" "$HOME/.local/bin/discord-guard-widget"
+install -m 0644 "$ROOT/assets/icons/discord-guard.svg" "$HOME/.local/share/icons/hicolor/scalable/apps/discord-guard.svg"
 
 sed "s|@HOME@|$HOME|g" "$ROOT/desktop/discord.desktop.in" > "$HOME/.local/share/applications/discord.desktop"
 sed "s|@HOME@|$HOME|g" "$ROOT/desktop/discord_discord.desktop.in" > "$HOME/.local/share/applications/discord_discord.desktop"
@@ -26,6 +28,9 @@ systemctl --user enable --now discord-timeblock.timer
 
 if command -v update-desktop-database >/dev/null 2>&1; then
   update-desktop-database "$HOME/.local/share/applications" >/dev/null 2>&1 || true
+fi
+if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+  gtk-update-icon-cache -q "$HOME/.local/share/icons/hicolor" >/dev/null 2>&1 || true
 fi
 
 echo "discord-guard instalado."

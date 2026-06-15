@@ -39,6 +39,8 @@ Run `discord-guard-widget` to show a small tray/status widget. Clicking it opens
 
 The installer also adds the widget to `~/.config/autostart`, so it starts with your desktop session.
 
+The widget uses a local `discord-guard` icon with a shield overlay and a glass-style GTK window. Real background blur depends on the desktop compositor, so the app uses a translucent glass treatment that works without extra packages.
+
 ## Emergency Unlock
 
 During blocked hours, `discord-guard` asks for a six-digit TOTP code. A valid code unlocks Discord until 06:00 of the current blocked window.

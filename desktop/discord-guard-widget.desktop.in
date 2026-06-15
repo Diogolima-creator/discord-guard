@@ -2,7 +2,7 @@
 Name=Discord Guard Widget
 Comment=Tray widget for Discord Guard status and controls.
 Exec=@HOME@/.local/bin/discord-guard-widget
-Icon=discord
+Icon=discord-guard
 Type=Application
 Categories=Utility;
 StartupNotify=false
