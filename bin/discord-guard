@@ -1,0 +1,301 @@
+#!/usr/bin/env python3
+import argparse
+import base64
+import datetime as dt
+import hashlib
+import hmac
+import json
+import os
+import secrets
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+
+HOME = Path.home()
+CONFIG_DIR = HOME / ".config" / "discord-guard"
+CACHE_DIR = HOME / ".cache" / "discord-guard"
+SECRET_FILE = CONFIG_DIR / "totp_secret"
+UNLOCK_FILE = CACHE_DIR / "unlocked_until"
+REAL_DISCORD = [Path("/usr/share/discord/Discord"), Path("/snap/bin/discord")]
+KILL_PATTERNS = [
+    "/usr/share/discord/Discord",
+    "/snap/discord/",
+    "/snap/bin/discord",
+]
+
+
+def now() -> dt.datetime:
+    override = os.environ.get("DISCORD_GUARD_NOW")
+    if override:
+        parsed = dt.datetime.fromisoformat(override)
+        if parsed.tzinfo is None:
+            return parsed.astimezone()
+        return parsed
+    return dt.datetime.now().astimezone()
+
+
+def blocked_window(current: dt.datetime) -> tuple[bool, dt.datetime | None, str]:
+    weekday = current.weekday()  # Monday = 0
+    today_20 = current.replace(hour=20, minute=0, second=0, microsecond=0)
+    today_06 = current.replace(hour=6, minute=0, second=0, microsecond=0)
+
+    if weekday in (0, 1, 2, 3) and current >= today_20:
+        return True, today_06 + dt.timedelta(days=1), "night block started today"
+
+    if weekday in (1, 2, 3, 4) and current < today_06:
+        return True, today_06, "night block carried from yesterday"
+
+    return False, None, "outside blocked schedule"
+
+
+def next_change(current: dt.datetime) -> dt.datetime:
+    is_blocked, until, _ = blocked_window(current)
+    if is_blocked and until:
+        return until
+
+    probe = current.replace(second=0, microsecond=0)
+    for days in range(8):
+        candidate = (probe + dt.timedelta(days=days)).replace(
+            hour=20, minute=0, second=0, microsecond=0
+        )
+        if candidate <= current:
+            continue
+        if candidate.weekday() in (0, 1, 2, 3):
+            return candidate
+    return probe + dt.timedelta(days=1)
+
+
+def ensure_dirs() -> None:
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def read_unlock_until() -> dt.datetime | None:
+    try:
+        raw = UNLOCK_FILE.read_text(encoding="utf-8").strip()
+    except FileNotFoundError:
+        return None
+    if not raw:
+        return None
+    try:
+        parsed = dt.datetime.fromisoformat(raw)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.astimezone()
+    return parsed
+
+
+def is_unlocked(current: dt.datetime) -> bool:
+    until = read_unlock_until()
+    return bool(until and current < until)
+
+
+def set_unlocked_until(until: dt.datetime) -> None:
+    ensure_dirs()
+    UNLOCK_FILE.write_text(until.isoformat(), encoding="utf-8")
+    os.chmod(UNLOCK_FILE, 0o600)
+
+
+def notify(title: str, body: str) -> None:
+    if os.environ.get("DISCORD_GUARD_NO_NOTIFY"):
+        return
+    try:
+        subprocess.run(["notify-send", title, body], check=False)
+    except FileNotFoundError:
+        pass
+
+
+def real_discord_path() -> Path | None:
+    for candidate in REAL_DISCORD:
+        if candidate.exists() and os.access(candidate, os.X_OK):
+            return candidate
+    return None
+
+
+def launch_real(args: list[str]) -> int:
+    target = real_discord_path()
+    if not target:
+        print("Discord real nao encontrado.", file=sys.stderr)
+        return 127
+    subprocess.Popen([str(target), *args], start_new_session=True)
+    return 0
+
+
+def kill_discord() -> bool:
+    killed = False
+    for pattern in KILL_PATTERNS:
+        result = subprocess.run(["pkill", "-f", pattern], check=False)
+        killed = killed or result.returncode == 0
+    return killed
+
+
+def secret_bytes() -> bytes:
+    raw = SECRET_FILE.read_text(encoding="utf-8").strip().replace(" ", "")
+    return base64.b32decode(raw.upper(), casefold=True)
+
+
+def totp(secret: bytes, for_time: int | None = None, step: int = 30, digits: int = 6) -> str:
+    if for_time is None:
+        for_time = int(time.time())
+    counter = int(for_time // step)
+    msg = counter.to_bytes(8, "big")
+    digest = hmac.new(secret, msg, hashlib.sha1).digest()
+    offset = digest[-1] & 0x0F
+    code = int.from_bytes(digest[offset : offset + 4], "big") & 0x7FFFFFFF
+    return str(code % (10**digits)).zfill(digits)
+
+
+def verify_code(code: str) -> bool:
+    if not SECRET_FILE.exists():
+        print("TOTP ainda nao configurado. Rode: discord-guard setup-totp", file=sys.stderr)
+        return False
+    clean = "".join(ch for ch in code if ch.isdigit())
+    if len(clean) != 6:
+        return False
+    secret = secret_bytes()
+    current = int(time.time())
+    return any(hmac.compare_digest(clean, totp(secret, current + offset)) for offset in (-30, 0, 30))
+
+
+def prompt_code() -> str:
+    try:
+        result = subprocess.run(
+            ["zenity", "--entry", "--title=Discord bloqueado", "--text=Codigo temporario:"],
+            check=False,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+        )
+        if result.returncode == 0:
+            return result.stdout.strip()
+    except FileNotFoundError:
+        pass
+    return input("Codigo temporario: ").strip()
+
+
+def status_payload(current: dt.datetime) -> dict[str, str | bool | None]:
+    is_blocked, until, reason = blocked_window(current)
+    unlocked_until = read_unlock_until()
+    if unlocked_until and unlocked_until <= current:
+        unlocked_until = None
+    effective_blocked = is_blocked and not is_unlocked(current)
+    return {
+        "now": current.isoformat(timespec="seconds"),
+        "scheduled_blocked": is_blocked,
+        "effective_blocked": effective_blocked,
+        "reason": reason,
+        "next_change": next_change(current).isoformat(timespec="seconds"),
+        "blocked_until": until.isoformat(timespec="seconds") if until else None,
+        "unlocked_until": unlocked_until.isoformat(timespec="seconds") if unlocked_until else None,
+    }
+
+
+def cmd_setup_totp(_: argparse.Namespace) -> int:
+    ensure_dirs()
+    if SECRET_FILE.exists():
+        print(f"Segredo ja existe em {SECRET_FILE}")
+        print("Remova esse arquivo manualmente se quiser gerar outro.")
+        return 0
+
+    secret = base64.b32encode(secrets.token_bytes(20)).decode("ascii").rstrip("=")
+    padding = "=" * ((8 - len(secret) % 8) % 8)
+    SECRET_FILE.write_text(secret + padding + "\n", encoding="utf-8")
+    os.chmod(SECRET_FILE, 0o600)
+    print("Configure este segredo em um app autenticador ou guarde fora do seu uso diario:")
+    print(secret)
+    print("Conta: discord-guard")
+    print("Emissor: local")
+    return 0
+
+
+def cmd_status(args: argparse.Namespace) -> int:
+    payload = status_payload(now())
+    if args.json:
+        print(json.dumps(payload, ensure_ascii=True))
+        return 0
+
+    print(f"agora: {payload['now']}")
+    print(f"agenda_bloqueada: {'sim' if payload['scheduled_blocked'] else 'nao'} ({payload['reason']})")
+    print(f"bloqueio_efetivo: {'sim' if payload['effective_blocked'] else 'nao'}")
+    print(f"proxima_mudanca: {payload['next_change']}")
+    if payload["blocked_until"]:
+        print(f"bloqueado_ate: {payload['blocked_until']}")
+    if payload["unlocked_until"]:
+        print(f"liberado_ate: {payload['unlocked_until']}")
+    return 0
+
+
+def cmd_launch(args: argparse.Namespace) -> int:
+    current = now()
+    is_blocked, until, _ = blocked_window(current)
+    if not is_blocked or is_unlocked(current):
+        return launch_real(args.discord_args)
+
+    message = f"Discord bloqueado ate {until.strftime('%H:%M')}."
+    notify("Discord bloqueado", message)
+    print(message)
+    code = prompt_code()
+    if verify_code(code):
+        set_unlocked_until(until)
+        notify("Discord liberado", f"Liberado ate {until.strftime('%H:%M')}.")
+        return launch_real(args.discord_args)
+
+    notify("Discord bloqueado", "Codigo invalido.")
+    print("Codigo invalido.", file=sys.stderr)
+    return 1
+
+
+def cmd_unlock(_: argparse.Namespace) -> int:
+    current = now()
+    is_blocked, until, _ = blocked_window(current)
+    if not is_blocked or not until:
+        print("Fora do horario bloqueado; nada para liberar.")
+        return 0
+    code = prompt_code()
+    if not verify_code(code):
+        print("Codigo invalido.", file=sys.stderr)
+        return 1
+    set_unlocked_until(until)
+    print(f"Discord liberado ate {until.isoformat(timespec='seconds')}")
+    return 0
+
+
+def cmd_enforce(_: argparse.Namespace) -> int:
+    current = now()
+    is_blocked, until, _ = blocked_window(current)
+    if not is_blocked or is_unlocked(current):
+        return 0
+    if kill_discord():
+        notify("Discord fechado", f"Bloqueado ate {until.strftime('%H:%M')}.")
+    return 0
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Guardrail local de horario para o Discord.")
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    sub.add_parser("setup-totp").set_defaults(func=cmd_setup_totp)
+
+    status = sub.add_parser("status")
+    status.add_argument("--json", action="store_true")
+    status.set_defaults(func=cmd_status)
+
+    sub.add_parser("enforce").set_defaults(func=cmd_enforce)
+    sub.add_parser("unlock").set_defaults(func=cmd_unlock)
+
+    launch = sub.add_parser("launch")
+    launch.add_argument("discord_args", nargs=argparse.REMAINDER)
+    launch.set_defaults(func=cmd_launch)
+    return parser
+
+
+def main() -> int:
+    args = build_parser().parse_args()
+    return args.func(args)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

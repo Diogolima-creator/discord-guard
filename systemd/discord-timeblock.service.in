@@ -1,0 +1,6 @@
+[Unit]
+Description=Enforce local Discord time block
+
+[Service]
+Type=oneshot
+ExecStart=@HOME@/.local/bin/discord-guard enforce

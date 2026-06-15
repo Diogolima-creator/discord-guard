@@ -1,0 +1,11 @@
+[Desktop Entry]
+X-SnapInstanceName=discord
+Name=Discord
+StartupWMClass=discord
+Comment=Discord launcher guarded by local time block rules.
+GenericName=Internet Messenger
+X-SnapAppName=discord
+Exec=@HOME@/.local/bin/discord-guard launch
+Icon=/snap/discord/current/meta/gui/icon.png
+Type=Application
+Categories=Network;InstantMessaging;

@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=Discord
+StartupWMClass=discord
+Comment=Discord launcher guarded by local time block rules.
+GenericName=Internet Messenger
+Exec=@HOME@/.local/bin/discord-guard launch
+Icon=discord
+Type=Application
+Categories=Network;InstantMessaging;
+Path=@HOME@
