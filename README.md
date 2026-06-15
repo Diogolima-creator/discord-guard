@@ -37,7 +37,7 @@ Opening `discord` from the terminal or the GNOME launcher goes through `discord-
 
 Run `discord-guard-widget` to show a small tray/status widget. Clicking it opens an explanation window with the current state, the active rule, the next schedule change and quick actions to open Discord or unlock with a temporary code.
 
-The installer also adds the widget to `~/.config/autostart`, so it starts with your desktop session.
+The installer also adds the widget to `~/.config/autostart/discord-guard-widget.desktop`, so it starts with your desktop session.
 
 The widget uses a local `discord-guard` icon with a shield overlay and a glass-style GTK window. Real background blur depends on the desktop compositor, so the app uses a translucent glass treatment that works without extra packages.
 

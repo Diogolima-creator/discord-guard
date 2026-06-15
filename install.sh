@@ -19,6 +19,7 @@ sed "s|@HOME@|$HOME|g" "$ROOT/desktop/discord_discord.desktop.in" > "$HOME/.loca
 sed "s|@HOME@|$HOME|g" "$ROOT/desktop/discord-guard-widget.desktop.in" > "$HOME/.local/share/applications/discord-guard-widget.desktop"
 cp "$HOME/.local/share/applications/discord-guard-widget.desktop" "$HOME/.config/autostart/discord-guard-widget.desktop"
 chmod 0644 "$HOME/.local/share/applications/discord.desktop" "$HOME/.local/share/applications/discord_discord.desktop" "$HOME/.local/share/applications/discord-guard-widget.desktop" "$HOME/.config/autostart/discord-guard-widget.desktop"
+chmod +x "$HOME/.config/autostart/discord-guard-widget.desktop" 2>/dev/null || true
 
 sed "s|@HOME@|$HOME|g" "$ROOT/systemd/discord-timeblock.service.in" > "$HOME/.config/systemd/user/discord-timeblock.service"
 install -m 0644 "$ROOT/systemd/discord-timeblock.timer" "$HOME/.config/systemd/user/discord-timeblock.timer"
