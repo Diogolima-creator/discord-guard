@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=Discord Guard Widget
+Comment=Tray widget for Discord Guard status and controls.
+Exec=@HOME@/.local/bin/discord-guard-widget
+Icon=discord
+Type=Application
+Categories=Utility;
+StartupNotify=false
+X-GNOME-Autostart-enabled=true

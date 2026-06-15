@@ -5,14 +5,18 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 install -d "$HOME/.local/bin"
 install -d "$HOME/.local/share/applications"
+install -d "$HOME/.config/autostart"
 install -d "$HOME/.config/systemd/user"
 
 install -m 0755 "$ROOT/bin/discord-guard" "$HOME/.local/bin/discord-guard"
 install -m 0755 "$ROOT/bin/discord" "$HOME/.local/bin/discord"
+install -m 0755 "$ROOT/bin/discord-guard-widget" "$HOME/.local/bin/discord-guard-widget"
 
 sed "s|@HOME@|$HOME|g" "$ROOT/desktop/discord.desktop.in" > "$HOME/.local/share/applications/discord.desktop"
 sed "s|@HOME@|$HOME|g" "$ROOT/desktop/discord_discord.desktop.in" > "$HOME/.local/share/applications/discord_discord.desktop"
-chmod 0644 "$HOME/.local/share/applications/discord.desktop" "$HOME/.local/share/applications/discord_discord.desktop"
+sed "s|@HOME@|$HOME|g" "$ROOT/desktop/discord-guard-widget.desktop.in" > "$HOME/.local/share/applications/discord-guard-widget.desktop"
+cp "$HOME/.local/share/applications/discord-guard-widget.desktop" "$HOME/.config/autostart/discord-guard-widget.desktop"
+chmod 0644 "$HOME/.local/share/applications/discord.desktop" "$HOME/.local/share/applications/discord_discord.desktop" "$HOME/.local/share/applications/discord-guard-widget.desktop" "$HOME/.config/autostart/discord-guard-widget.desktop"
 
 sed "s|@HOME@|$HOME|g" "$ROOT/systemd/discord-timeblock.service.in" > "$HOME/.config/systemd/user/discord-timeblock.service"
 install -m 0644 "$ROOT/systemd/discord-timeblock.timer" "$HOME/.config/systemd/user/discord-timeblock.timer"
@@ -27,3 +31,4 @@ fi
 echo "discord-guard instalado."
 echo "Para configurar desbloqueio emergencial: discord-guard setup-totp"
 echo "Para ver o estado atual: discord-guard status"
+echo "Para abrir o widget: discord-guard-widget"

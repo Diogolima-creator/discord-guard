@@ -28,9 +28,16 @@ discord-guard status
 discord-guard status --json
 discord-guard unlock
 discord-guard enforce
+discord-guard-widget
 ```
 
 Opening `discord` from the terminal or the GNOME launcher goes through `discord-guard launch`.
+
+## Tray Widget
+
+Run `discord-guard-widget` to show a small tray/status widget. Clicking it opens an explanation window with the current state, the active rule, the next schedule change and quick actions to open Discord or unlock with a temporary code.
+
+The installer also adds the widget to `~/.config/autostart`, so it starts with your desktop session.
 
 ## Emergency Unlock
 
