@@ -16,8 +16,24 @@ from pathlib import Path
 HOME = Path.home()
 CONFIG_DIR = HOME / ".config" / "discord-guard"
 CACHE_DIR = HOME / ".cache" / "discord-guard"
+CONFIG_FILE = CONFIG_DIR / "config.json"
 SECRET_FILE = CONFIG_DIR / "totp_secret"
 UNLOCK_FILE = CACHE_DIR / "unlocked_until"
+DEFAULT_CONFIG = {
+    "start": "20:00",
+    "end": "06:00",
+    "days": ["mon", "tue", "wed", "thu"],
+}
+DAY_NAMES = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+DAY_LABELS = {
+    "mon": "segunda",
+    "tue": "terca",
+    "wed": "quarta",
+    "thu": "quinta",
+    "fri": "sexta",
+    "sat": "sabado",
+    "sun": "domingo",
+}
 REAL_DISCORD = [Path("/usr/share/discord/Discord"), Path("/snap/bin/discord")]
 KILL_PATTERNS = [
     "/usr/share/discord/Discord",
@@ -36,18 +52,83 @@ def now() -> dt.datetime:
     return dt.datetime.now().astimezone()
 
 
+def parse_time(value: str) -> dt.time:
+    try:
+        hour, minute = value.split(":", 1)
+        return dt.time(hour=int(hour), minute=int(minute))
+    except ValueError as exc:
+        raise ValueError(f"horario invalido: {value!r}. Use HH:MM.") from exc
+
+
+def normalize_days(raw_days: list[str] | str) -> list[str]:
+    if isinstance(raw_days, str):
+        raw_days = [part.strip() for part in raw_days.split(",")]
+    normalized = []
+    for day in raw_days:
+        key = day.strip().lower()
+        if key not in DAY_NAMES:
+            raise ValueError(f"dia invalido: {day!r}. Use: {', '.join(DAY_NAMES)}")
+        if key not in normalized:
+            normalized.append(key)
+    if not normalized:
+        raise ValueError("days nao pode ficar vazio.")
+    return normalized
+
+
+def load_config() -> dict:
+    config = dict(DEFAULT_CONFIG)
+    if CONFIG_FILE.exists():
+        try:
+            loaded = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"config JSON invalido em {CONFIG_FILE}: {exc}") from exc
+        if not isinstance(loaded, dict):
+            raise ValueError(f"config invalido em {CONFIG_FILE}: esperado objeto JSON.")
+        config.update({key: loaded[key] for key in DEFAULT_CONFIG if key in loaded})
+
+    start = parse_time(str(config["start"]))
+    end = parse_time(str(config["end"]))
+    days = normalize_days(config["days"])
+    return {
+        "start": start.strftime("%H:%M"),
+        "end": end.strftime("%H:%M"),
+        "days": days,
+    }
+
+
+def save_config(config: dict) -> None:
+    ensure_dirs()
+    CONFIG_FILE.write_text(json.dumps(config, indent=2, ensure_ascii=True) + "\n", encoding="utf-8")
+    os.chmod(CONFIG_FILE, 0o600)
+
+
+def schedule_label(config: dict) -> str:
+    day_text = ", ".join(DAY_LABELS[day] for day in config["days"])
+    return f"{day_text}, das {config['start']} ate {config['end']} do dia seguinte"
+
+
+def window_for_start_day(current: dt.datetime, start_day: dt.date, config: dict) -> tuple[dt.datetime, dt.datetime]:
+    start_time = parse_time(config["start"])
+    end_time = parse_time(config["end"])
+    start = dt.datetime.combine(start_day, start_time, tzinfo=current.tzinfo)
+    end_date = start_day if end_time > start_time else start_day + dt.timedelta(days=1)
+    end = dt.datetime.combine(end_date, end_time, tzinfo=current.tzinfo)
+    if end <= start:
+        end += dt.timedelta(days=1)
+    return start, end
+
+
 def blocked_window(current: dt.datetime) -> tuple[bool, dt.datetime | None, str]:
-    weekday = current.weekday()  # Monday = 0
-    today_20 = current.replace(hour=20, minute=0, second=0, microsecond=0)
-    today_06 = current.replace(hour=6, minute=0, second=0, microsecond=0)
-
-    if weekday in (0, 1, 2, 3) and current >= today_20:
-        return True, today_06 + dt.timedelta(days=1), "night block started today"
-
-    if weekday in (1, 2, 3, 4) and current < today_06:
-        return True, today_06, "night block carried from yesterday"
-
-    return False, None, "outside blocked schedule"
+    config = load_config()
+    allowed_start_days = {DAY_NAMES.index(day) for day in config["days"]}
+    for offset in (0, -1):
+        start_day = current.date() + dt.timedelta(days=offset)
+        if start_day.weekday() not in allowed_start_days:
+            continue
+        start, end = window_for_start_day(current, start_day, config)
+        if start <= current < end:
+            return True, end, f"inside configured schedule: {schedule_label(config)}"
+    return False, None, f"outside configured schedule: {schedule_label(config)}"
 
 
 def next_change(current: dt.datetime) -> dt.datetime:
@@ -55,16 +136,16 @@ def next_change(current: dt.datetime) -> dt.datetime:
     if is_blocked and until:
         return until
 
-    probe = current.replace(second=0, microsecond=0)
-    for days in range(8):
-        candidate = (probe + dt.timedelta(days=days)).replace(
-            hour=20, minute=0, second=0, microsecond=0
-        )
-        if candidate <= current:
+    config = load_config()
+    allowed_start_days = {DAY_NAMES.index(day) for day in config["days"]}
+    for offset in range(8):
+        start_day = current.date() + dt.timedelta(days=offset)
+        if start_day.weekday() not in allowed_start_days:
             continue
-        if candidate.weekday() in (0, 1, 2, 3):
-            return candidate
-    return probe + dt.timedelta(days=1)
+        start, _ = window_for_start_day(current, start_day, config)
+        if start > current:
+            return start
+    return current + dt.timedelta(days=1)
 
 
 def ensure_dirs() -> None:
@@ -177,6 +258,7 @@ def prompt_code() -> str:
 
 
 def status_payload(current: dt.datetime) -> dict[str, str | bool | None]:
+    config = load_config()
     is_blocked, until, reason = blocked_window(current)
     unlocked_until = read_unlock_until()
     if unlocked_until and unlocked_until <= current:
@@ -190,6 +272,8 @@ def status_payload(current: dt.datetime) -> dict[str, str | bool | None]:
         "next_change": next_change(current).isoformat(timespec="seconds"),
         "blocked_until": until.isoformat(timespec="seconds") if until else None,
         "unlocked_until": unlocked_until.isoformat(timespec="seconds") if unlocked_until else None,
+        "schedule": schedule_label(config),
+        "config": config,
     }
 
 
@@ -219,12 +303,39 @@ def cmd_status(args: argparse.Namespace) -> int:
 
     print(f"agora: {payload['now']}")
     print(f"agenda_bloqueada: {'sim' if payload['scheduled_blocked'] else 'nao'} ({payload['reason']})")
+    print(f"agenda: {payload['schedule']}")
     print(f"bloqueio_efetivo: {'sim' if payload['effective_blocked'] else 'nao'}")
     print(f"proxima_mudanca: {payload['next_change']}")
     if payload["blocked_until"]:
         print(f"bloqueado_ate: {payload['blocked_until']}")
     if payload["unlocked_until"]:
         print(f"liberado_ate: {payload['unlocked_until']}")
+    return 0
+
+
+def cmd_config_show(args: argparse.Namespace) -> int:
+    config = load_config()
+    if args.json:
+        print(json.dumps(config, ensure_ascii=True))
+    else:
+        print(f"start: {config['start']}")
+        print(f"end: {config['end']}")
+        print(f"days: {','.join(config['days'])}")
+        print(f"agenda: {schedule_label(config)}")
+    return 0
+
+
+def cmd_config_set(args: argparse.Namespace) -> int:
+    config = load_config()
+    if args.start:
+        config["start"] = parse_time(args.start).strftime("%H:%M")
+    if args.end:
+        config["end"] = parse_time(args.end).strftime("%H:%M")
+    if args.days:
+        config["days"] = normalize_days(args.days)
+    save_config(config)
+    print(f"Config salva em {CONFIG_FILE}")
+    print(f"agenda: {schedule_label(config)}")
     return 0
 
 
@@ -282,6 +393,17 @@ def build_parser() -> argparse.ArgumentParser:
     status = sub.add_parser("status")
     status.add_argument("--json", action="store_true")
     status.set_defaults(func=cmd_status)
+
+    config = sub.add_parser("config")
+    config_sub = config.add_subparsers(dest="config_command", required=True)
+    config_show = config_sub.add_parser("show")
+    config_show.add_argument("--json", action="store_true")
+    config_show.set_defaults(func=cmd_config_show)
+    config_set = config_sub.add_parser("set")
+    config_set.add_argument("--start", help="Horario inicial HH:MM")
+    config_set.add_argument("--end", help="Horario final HH:MM")
+    config_set.add_argument("--days", help="Dias de inicio: mon,tue,wed,thu,fri,sat,sun")
+    config_set.set_defaults(func=cmd_config_set)
 
     sub.add_parser("enforce").set_defaults(func=cmd_enforce)
     sub.add_parser("unlock").set_defaults(func=cmd_unlock)

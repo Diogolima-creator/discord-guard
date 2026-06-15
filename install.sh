@@ -8,6 +8,7 @@ install -d "$HOME/.local/share/applications"
 install -d "$HOME/.local/share/icons/hicolor/scalable/apps"
 install -d "$HOME/.config/autostart"
 install -d "$HOME/.config/systemd/user"
+install -d "$HOME/.config/discord-guard"
 
 install -m 0755 "$ROOT/bin/discord-guard" "$HOME/.local/bin/discord-guard"
 install -m 0755 "$ROOT/bin/discord" "$HOME/.local/bin/discord"
@@ -23,6 +24,17 @@ chmod +x "$HOME/.config/autostart/discord-guard-widget.desktop" 2>/dev/null || t
 
 sed "s|@HOME@|$HOME|g" "$ROOT/systemd/discord-timeblock.service.in" > "$HOME/.config/systemd/user/discord-timeblock.service"
 install -m 0644 "$ROOT/systemd/discord-timeblock.timer" "$HOME/.config/systemd/user/discord-timeblock.timer"
+
+if [ ! -f "$HOME/.config/discord-guard/config.json" ]; then
+  cat > "$HOME/.config/discord-guard/config.json" <<'JSON'
+{
+  "start": "20:00",
+  "end": "06:00",
+  "days": ["mon", "tue", "wed", "thu"]
+}
+JSON
+  chmod 0600 "$HOME/.config/discord-guard/config.json"
+fi
 
 systemctl --user daemon-reload
 systemctl --user enable --now discord-timeblock.timer

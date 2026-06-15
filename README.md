@@ -7,6 +7,7 @@ Current schedule:
 - Blocks Monday to Thursday from 20:00 until 06:00 the next morning.
 - Allows Friday night, Saturday and Sunday.
 - Targets the installed Discord desktop app only, not Discord in the browser.
+- Can be changed in `~/.config/discord-guard/config.json` or with `discord-guard config set`.
 
 This is an autocontrol tool, not a security boundary. It runs without sudo and can be bypassed by a determined local user.
 
@@ -32,6 +33,32 @@ discord-guard-widget
 ```
 
 Opening `discord` from the terminal or the GNOME launcher goes through `discord-guard launch`.
+
+## Schedule Config
+
+Default:
+
+```json
+{
+  "start": "20:00",
+  "end": "06:00",
+  "days": ["mon", "tue", "wed", "thu"]
+}
+```
+
+Show the active schedule:
+
+```bash
+discord-guard config show
+```
+
+Change it:
+
+```bash
+discord-guard config set --start 21:30 --end 07:15 --days mon,tue,wed,thu
+```
+
+`days` means the days when a blocked window starts. Example: `mon` with `21:30` to `07:15` blocks Monday night until Tuesday morning.
 
 ## Tray Widget
 

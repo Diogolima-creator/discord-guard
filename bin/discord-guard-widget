@@ -192,7 +192,7 @@ class DiscordGuardWidget:
         self.status_label.set_markup(f"<b>{GLib.markup_escape_text(title)}</b>")
         lines = [
             f"Estado: {title}",
-            "Regra: segunda a quinta, das 20:00 ate 06:00 do dia seguinte.",
+            f"Regra: {status.get('schedule') or '-'}",
             "Escopo: bloqueia o app desktop do Discord; nao bloqueia Discord no navegador.",
             f"Motivo: {status.get('reason')}",
             f"Proxima mudanca: {status.get('next_change') or '-'}",
