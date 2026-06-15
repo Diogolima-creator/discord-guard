@@ -28,9 +28,13 @@ install -m 0644 "$ROOT/systemd/discord-timeblock.timer" "$HOME/.config/systemd/u
 if [ ! -f "$HOME/.config/discord-guard/config.json" ]; then
   cat > "$HOME/.config/discord-guard/config.json" <<'JSON'
 {
-  "start": "20:00",
-  "end": "06:00",
-  "days": ["mon", "tue", "wed", "thu"]
+  "blocks": [
+    {
+      "start": "20:00",
+      "end": "06:00",
+      "days": ["mon", "tue", "wed", "thu"]
+    }
+  ]
 }
 JSON
   chmod 0600 "$HOME/.config/discord-guard/config.json"

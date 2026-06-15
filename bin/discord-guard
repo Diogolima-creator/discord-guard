@@ -20,9 +20,13 @@ CONFIG_FILE = CONFIG_DIR / "config.json"
 SECRET_FILE = CONFIG_DIR / "totp_secret"
 UNLOCK_FILE = CACHE_DIR / "unlocked_until"
 DEFAULT_CONFIG = {
-    "start": "20:00",
-    "end": "06:00",
-    "days": ["mon", "tue", "wed", "thu"],
+    "blocks": [
+        {
+            "start": "20:00",
+            "end": "06:00",
+            "days": ["mon", "tue", "wed", "thu"],
+        }
+    ],
 }
 DAY_NAMES = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
 DAY_LABELS = {
@@ -75,6 +79,35 @@ def normalize_days(raw_days: list[str] | str) -> list[str]:
     return normalized
 
 
+def normalize_block(raw: dict) -> dict:
+    if not isinstance(raw, dict):
+        raise ValueError("cada bloco precisa ser um objeto JSON.")
+    start = parse_time(str(raw.get("start", "20:00")))
+    end = parse_time(str(raw.get("end", "06:00")))
+    days = normalize_days(raw.get("days", []))
+    return {
+        "start": start.strftime("%H:%M"),
+        "end": end.strftime("%H:%M"),
+        "days": days,
+    }
+
+
+def normalize_config(raw: dict) -> dict:
+    if "blocks" in raw:
+        raw_blocks = raw["blocks"]
+    else:
+        raw_blocks = [
+            {
+                "start": raw.get("start", "20:00"),
+                "end": raw.get("end", "06:00"),
+                "days": raw.get("days", ["mon", "tue", "wed", "thu"]),
+            }
+        ]
+    if not isinstance(raw_blocks, list) or not raw_blocks:
+        raise ValueError("config precisa ter pelo menos um bloco em blocks[].")
+    return {"blocks": [normalize_block(block) for block in raw_blocks]}
+
+
 def load_config() -> dict:
     config = dict(DEFAULT_CONFIG)
     if CONFIG_FILE.exists():
@@ -84,32 +117,29 @@ def load_config() -> dict:
             raise ValueError(f"config JSON invalido em {CONFIG_FILE}: {exc}") from exc
         if not isinstance(loaded, dict):
             raise ValueError(f"config invalido em {CONFIG_FILE}: esperado objeto JSON.")
-        config.update({key: loaded[key] for key in DEFAULT_CONFIG if key in loaded})
-
-    start = parse_time(str(config["start"]))
-    end = parse_time(str(config["end"]))
-    days = normalize_days(config["days"])
-    return {
-        "start": start.strftime("%H:%M"),
-        "end": end.strftime("%H:%M"),
-        "days": days,
-    }
+        config = loaded
+    return normalize_config(config)
 
 
 def save_config(config: dict) -> None:
+    config = normalize_config(config)
     ensure_dirs()
     CONFIG_FILE.write_text(json.dumps(config, indent=2, ensure_ascii=True) + "\n", encoding="utf-8")
     os.chmod(CONFIG_FILE, 0o600)
 
 
+def block_label(block: dict) -> str:
+    day_text = ", ".join(DAY_LABELS[day] for day in block["days"])
+    return f"{day_text}, das {block['start']} ate {block['end']}"
+
+
 def schedule_label(config: dict) -> str:
-    day_text = ", ".join(DAY_LABELS[day] for day in config["days"])
-    return f"{day_text}, das {config['start']} ate {config['end']} do dia seguinte"
+    return " | ".join(block_label(block) for block in config["blocks"])
 
 
-def window_for_start_day(current: dt.datetime, start_day: dt.date, config: dict) -> tuple[dt.datetime, dt.datetime]:
-    start_time = parse_time(config["start"])
-    end_time = parse_time(config["end"])
+def window_for_start_day(current: dt.datetime, start_day: dt.date, block: dict) -> tuple[dt.datetime, dt.datetime]:
+    start_time = parse_time(block["start"])
+    end_time = parse_time(block["end"])
     start = dt.datetime.combine(start_day, start_time, tzinfo=current.tzinfo)
     end_date = start_day if end_time > start_time else start_day + dt.timedelta(days=1)
     end = dt.datetime.combine(end_date, end_time, tzinfo=current.tzinfo)
@@ -118,33 +148,49 @@ def window_for_start_day(current: dt.datetime, start_day: dt.date, config: dict)
     return start, end
 
 
+def active_windows(current: dt.datetime) -> list[tuple[dt.datetime, dt.datetime, dict]]:
+    config = load_config()
+    windows = []
+    for block in config["blocks"]:
+        allowed_start_days = {DAY_NAMES.index(day) for day in block["days"]}
+        for offset in (0, -1):
+            start_day = current.date() + dt.timedelta(days=offset)
+            if start_day.weekday() not in allowed_start_days:
+                continue
+            start, end = window_for_start_day(current, start_day, block)
+            if start <= current < end:
+                windows.append((start, end, block))
+    return windows
+
+
 def blocked_window(current: dt.datetime) -> tuple[bool, dt.datetime | None, str]:
     config = load_config()
-    allowed_start_days = {DAY_NAMES.index(day) for day in config["days"]}
-    for offset in (0, -1):
-        start_day = current.date() + dt.timedelta(days=offset)
-        if start_day.weekday() not in allowed_start_days:
-            continue
-        start, end = window_for_start_day(current, start_day, config)
-        if start <= current < end:
-            return True, end, f"inside configured schedule: {schedule_label(config)}"
+    windows = active_windows(current)
+    if windows:
+        until = max(end for _, end, _ in windows)
+        active_labels = " | ".join(block_label(block) for _, _, block in windows)
+        return True, until, f"inside configured schedule: {active_labels}"
     return False, None, f"outside configured schedule: {schedule_label(config)}"
 
 
 def next_change(current: dt.datetime) -> dt.datetime:
-    is_blocked, until, _ = blocked_window(current)
-    if is_blocked and until:
-        return until
-
     config = load_config()
-    allowed_start_days = {DAY_NAMES.index(day) for day in config["days"]}
-    for offset in range(8):
-        start_day = current.date() + dt.timedelta(days=offset)
-        if start_day.weekday() not in allowed_start_days:
+    current_state = bool(active_windows(current))
+    candidates = set()
+    for block in config["blocks"]:
+        allowed_start_days = {DAY_NAMES.index(day) for day in block["days"]}
+        for offset in range(-1, 9):
+            start_day = current.date() + dt.timedelta(days=offset)
+            if start_day.weekday() not in allowed_start_days:
+                continue
+            start, end = window_for_start_day(current, start_day, block)
+            candidates.add(start)
+            candidates.add(end)
+    for candidate in sorted(candidates):
+        if candidate <= current:
             continue
-        start, _ = window_for_start_day(current, start_day, config)
-        if start > current:
-            return start
+        if bool(active_windows(candidate)) != current_state:
+            return candidate
     return current + dt.timedelta(days=1)
 
 
@@ -318,21 +364,32 @@ def cmd_config_show(args: argparse.Namespace) -> int:
     if args.json:
         print(json.dumps(config, ensure_ascii=True))
     else:
-        print(f"start: {config['start']}")
-        print(f"end: {config['end']}")
-        print(f"days: {','.join(config['days'])}")
+        for index, block in enumerate(config["blocks"], start=1):
+            print(f"block {index}: {block['start']} -> {block['end']} days={','.join(block['days'])}")
         print(f"agenda: {schedule_label(config)}")
     return 0
 
 
 def cmd_config_set(args: argparse.Namespace) -> int:
-    config = load_config()
+    if args.blocks:
+        try:
+            blocks = json.loads(args.blocks)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"blocks JSON invalido: {exc}") from exc
+        config = normalize_config({"blocks": blocks})
+        save_config(config)
+        print(f"Config salva em {CONFIG_FILE}")
+        print(f"agenda: {schedule_label(config)}")
+        return 0
+
+    block = load_config()["blocks"][0]
     if args.start:
-        config["start"] = parse_time(args.start).strftime("%H:%M")
+        block["start"] = parse_time(args.start).strftime("%H:%M")
     if args.end:
-        config["end"] = parse_time(args.end).strftime("%H:%M")
+        block["end"] = parse_time(args.end).strftime("%H:%M")
     if args.days:
-        config["days"] = normalize_days(args.days)
+        block["days"] = normalize_days(args.days)
+    config = {"blocks": [block]}
     save_config(config)
     print(f"Config salva em {CONFIG_FILE}")
     print(f"agenda: {schedule_label(config)}")
@@ -403,6 +460,7 @@ def build_parser() -> argparse.ArgumentParser:
     config_set.add_argument("--start", help="Horario inicial HH:MM")
     config_set.add_argument("--end", help="Horario final HH:MM")
     config_set.add_argument("--days", help="Dias de inicio: mon,tue,wed,thu,fri,sat,sun")
+    config_set.add_argument("--blocks", help="JSON com lista de blocos [{start,end,days}]")
     config_set.set_defaults(func=cmd_config_set)
 
     sub.add_parser("enforce").set_defaults(func=cmd_enforce)
@@ -416,7 +474,11 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     args = build_parser().parse_args()
-    return args.func(args)
+    try:
+        return args.func(args)
+    except ValueError as exc:
+        print(f"Erro: {exc}", file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":

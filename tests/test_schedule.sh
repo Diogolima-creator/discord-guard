@@ -30,4 +30,10 @@ check "2026-06-16T07:14:00-04:00" "True"
 check "2026-06-16T07:15:00-04:00" "False"
 check "2026-06-17T21:30:00-04:00" "False"
 
+HOME="$TMP_HOME" "$GUARD" config set --blocks '[{"start":"08:00","end":"09:00","days":["mon"]},{"start":"22:00","end":"23:00","days":["mon"]}]' >/dev/null
+check "2026-06-15T08:30:00-04:00" "True"
+check "2026-06-15T09:30:00-04:00" "False"
+check "2026-06-15T22:30:00-04:00" "True"
+check "2026-06-16T08:30:00-04:00" "False"
+
 echo "schedule tests passed"

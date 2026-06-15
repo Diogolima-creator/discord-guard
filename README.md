@@ -40,9 +40,13 @@ Default:
 
 ```json
 {
-  "start": "20:00",
-  "end": "06:00",
-  "days": ["mon", "tue", "wed", "thu"]
+  "blocks": [
+    {
+      "start": "20:00",
+      "end": "06:00",
+      "days": ["mon", "tue", "wed", "thu"]
+    }
+  ]
 }
 ```
 
@@ -56,6 +60,12 @@ Change it:
 
 ```bash
 discord-guard config set --start 21:30 --end 07:15 --days mon,tue,wed,thu
+```
+
+Multiple blocks:
+
+```bash
+discord-guard config set --blocks '[{"start":"08:00","end":"09:00","days":["mon","tue"]},{"start":"21:30","end":"07:15","days":["mon","tue","wed","thu"]}]'
 ```
 
 `days` means the days when a blocked window starts. Example: `mon` with `21:30` to `07:15` blocks Monday night until Tuesday morning.
